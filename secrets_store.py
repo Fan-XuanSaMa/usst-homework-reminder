@@ -63,8 +63,47 @@ def _available():
 
 # ---------- 读写 ----------
 
+# 数据结构（v2）：
+#   {
+#     "accounts": {                 # 按平台分开，新增平台不互相干扰
+#       "usst": {"user": "...", "password": "..."},
+#       "chaoxing": {"user": "...", "password": "..."}
+#     },
+#     "email": {                    # 提醒邮件的发信配置
+#       "sender": "...", "auth_code": "...", "recipient": "...",
+#       "host": "smtp.qq.com", "port": 465
+#     }
+#   }
+LEGACY_KEYS = ("usst", "smtp", "recipient", "portal_base_url")
+
+
+def _migrate(d):
+    """v1 → v2：v1 用 usst / smtp / recipient 三个顶层键，这里就地升级。"""
+    if not isinstance(d, dict) or not any(k in d for k in LEGACY_KEYS):
+        return d, False
+    accounts = d.setdefault("accounts", {})
+    old_usst = d.pop("usst", None)
+    old_smtp = d.pop("smtp", None)
+    old_rcpt = d.pop("recipient", None)
+    d.pop("portal_base_url", None)
+    if isinstance(old_usst, dict) and old_usst.get("user"):
+        accounts.setdefault("usst", {}).update(
+            {"user": old_usst.get("user", ""), "password": old_usst.get("password", "")}
+        )
+    if isinstance(old_smtp, dict) and old_smtp.get("auth_code"):
+        email = d.setdefault("email", {})
+        email.setdefault("sender", old_smtp.get("user", ""))
+        email.setdefault("auth_code", old_smtp.get("auth_code", ""))
+        if old_smtp.get("host"):
+            email.setdefault("host", old_smtp.get("host"))
+            email.setdefault("port", old_smtp.get("port", 465))
+    if old_rcpt:
+        d.setdefault("email", {}).setdefault("recipient", old_rcpt)
+    return d, True
+
+
 def load():
-    """返回 {"usst": {"user","password"}, "smtp": {"auth_code"}, "recipient"}。"""
+    """读取凭据；自动把旧格式升级为按平台分账号的结构。"""
     if not paths.SECRETS.exists():
         return {}
     raw = paths.SECRETS.read_bytes()
@@ -75,7 +114,14 @@ def load():
             plain = base64.b64decode(raw)
     except Exception as e:
         raise SecretError(f"无法读取凭据文件（可能不是本机本账户生成的）：{e}")
-    return json.loads(plain.decode("utf-8"))
+    data = json.loads(plain.decode("utf-8"))
+    data, changed = _migrate(data)
+    if changed:                       # 升级后立刻回写，下次就不用再转换
+        try:
+            save(data)
+        except Exception:
+            pass
+    return data
 
 
 def save(secrets: dict):
@@ -109,13 +155,50 @@ def get(key_path, default=""):
 
 
 def update(**sections):
-    """合并写入，例如 update(usst={"user": "...", "password": "..."})。"""
+    """合并写入，例如 update(accounts={"usst": {...}})。"""
     d = load()
     for sec, vals in sections.items():
         if isinstance(vals, dict):
             d.setdefault(sec, {}).update(vals)
         else:
             d[sec] = vals
+    save(d)
+    return d
+
+
+def account(platform_key):
+    """返回某平台的账号 {"user","password"}；未配置时返回 None。"""
+    a = (load().get("accounts") or {}).get(platform_key) or {}
+    return a if a.get("user") and a.get("password") else None
+
+
+def save_account(platform_key, **fields):
+    d = load()
+    d.setdefault("accounts", {})[platform_key] = fields
+    save(d)
+    return d
+
+
+def email_config():
+    """返回邮件配置；发件邮箱或授权码缺失时返回 None。"""
+    e = load().get("email") or {}
+    if not e.get("sender") or not e.get("auth_code"):
+        return None
+    e.setdefault("recipient", e["sender"])
+    e.setdefault("host", "smtp.qq.com")
+    e.setdefault("port", 465)
+    return e
+
+
+def save_email(sender, auth_code, recipient="", host="", port=465):
+    d = load()
+    d["email"] = {
+        "sender": sender,
+        "auth_code": auth_code,
+        "recipient": recipient or sender,
+        "host": host or "smtp.qq.com",
+        "port": int(port or 465),
+    }
     save(d)
     return d
 

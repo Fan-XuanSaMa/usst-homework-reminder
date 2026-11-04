@@ -7,7 +7,9 @@
     python install.py --uninstall   # 停止并移除开机自启
     python install.py --check       # 只跑一轮检查（不开托盘）
 
-首次使用请先运行：python config_tool.py --setup
+首次使用请先运行：
+    python config_tool.py --account    # 作业平台账号
+    python config_tool.py --email      # 提醒邮箱
 """
 import json
 import os
@@ -37,6 +39,7 @@ def sh(cmd):
 
 def ensure_config():
     import paths
+    import platforms
     import secrets_store as secrets
 
     paths.ensure()
@@ -53,25 +56,17 @@ def ensure_config():
             config_tool.migrate()
             print()
 
-    if secrets.exists():
-        d = secrets.load()
-        u, s = d.get("usst") or {}, d.get("smtp") or {}
-        missing = []
-        if not u.get("user") or not u.get("password"):
-            missing.append("学号 / 密码")
-        if not s.get("user") or not s.get("auth_code"):
-            missing.append("发件邮箱 / SMTP 授权码")
-        if not d.get("recipient"):
-            missing.append("收件邮箱")
-        if missing:
-            print("还缺这些配置：" + "、".join(missing))
-            print("请运行：python config_tool.py --setup")
-            return False
-        return True
-
-    print("尚未配置账号与邮箱。")
-    print("请运行：python config_tool.py --setup")
-    return False
+    hints = []
+    for m in platforms.enabled():
+        if not secrets.account(m.KEY):
+            hints.append(f"  {m.NAME}账号  →  python config_tool.py --account")
+    if not secrets.email_config():
+        hints.append("  提醒邮箱    →  python config_tool.py --email")
+    if hints:
+        print("还差这几步：")
+        print("\n".join(hints))
+        return False
+    return True
 
 
 def ensure_deps():

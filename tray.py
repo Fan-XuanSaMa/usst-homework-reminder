@@ -81,27 +81,44 @@ class App:
             return
         self.busy = True
         try:
-            import tronclass
+            import platforms
             import remind
             if muted_today():
                 self.last_summary = f"{datetime.now():%H:%M} 已静音，跳过本轮"
                 log(self.last_summary)
             else:
-                items = tronclass.fetch()
+                mods = platforms.configured()
+                if not mods:
+                    raise platforms.NotConfigured("尚未保存账号密码")
+                items = []
+                for mod in mods:
+                    items.extend(mod.fetch())
                 self.items = items
                 summary, sent = remind.check(items=items)
                 self.last_summary = summary
                 log(summary)
         except Exception as e:
-            msg = f"{datetime.now():%Y-%m-%d %H:%M} 检查失败：{type(e).__name__}: {e}"
-            self.last_summary = msg
-            log(msg)
-            log(traceback.format_exc())
             try:
+                import platforms
                 import remind
-                remind.send_failure_alert(f"{type(e).__name__}: {e}")
+                normal = isinstance(e, (platforms.NotConfigured, remind.NotConfigured))
             except Exception:
-                pass
+                normal = False
+            if normal:
+                # 少配了账号或邮箱：提示即可，不算故障，不发告警邮件
+                msg = f"{datetime.now():%Y-%m-%d %H:%M} 尚未配置：{e}"
+                self.last_summary = msg
+                log(msg)
+            else:
+                msg = f"{datetime.now():%Y-%m-%d %H:%M} 检查失败：{type(e).__name__}: {e}"
+                self.last_summary = msg
+                log(msg)
+                log(traceback.format_exc())
+                try:
+                    import remind
+                    remind.send_failure_alert(f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
         finally:
             self.busy = False
             self.refresh_icon()
@@ -161,7 +178,7 @@ class App:
         items = [
             pystray.MenuItem(f"未提交 {len(pend)} 个", None, enabled=False),
             pystray.MenuItem("立即检查", lambda: threading.Thread(target=self.check_once, daemon=True).start()),
-            pystray.MenuItem("打开一网畅学", lambda: webbrowser.open("https://1906.usst.edu.cn/user/index#/")),
+            self.home_item(),
             pystray.MenuItem("查看日志", self.open_log),
             pystray.MenuItem("编辑静默名单", self.open_mute),
             pystray.MenuItem("静音到明天 8:00", self.mute_today),
@@ -172,6 +189,30 @@ class App:
             label = f"{mark}{a['title'][:24]}（{fmt_left(delta)}）"
             items.insert(len(items) - 5, pystray.MenuItem(label, self.opener(a["url"])))
         return pystray.Menu(*items)
+
+    @staticmethod
+    def _platform_modules():
+        try:
+            import platforms
+            return platforms.enabled()
+        except Exception:
+            return []
+
+    def home_item(self):
+        """单平台：一个「打开XX」菜单项；多平台：子菜单。"""
+        import pystray
+        mods = [m for m in self._platform_modules() if getattr(m, "HOME", "")]
+        if not mods:
+            return pystray.MenuItem("打开作业平台", None, enabled=False)
+        if len(mods) == 1:
+            return pystray.MenuItem(f"打开{mods[0].NAME}", self.opener(mods[0].HOME))
+        return pystray.MenuItem(
+            "打开作业平台",
+            pystray.Menu(*[
+                pystray.MenuItem(m.NAME, self.opener(m.HOME))
+                for m in mods
+            ]),
+        )
 
     def opener(self, url):
         return lambda: webbrowser.open(url)
@@ -223,8 +264,8 @@ class App:
 
 
 def remind_now():
-    from tronclass import now
-    return now()
+    from datetime import timezone
+    return datetime.now(timezone(timedelta(hours=8)))
 
 
 def fmt_left(delta):

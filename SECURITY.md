@@ -12,7 +12,8 @@
 | 内容 | 位置 | 保护方式 |
 |---|---|---|
 | 源码、README、LICENSE | 项目目录 | 可自由分享 |
-| 账号密码、邮箱授权码、收件人 | `%APPDATA%\usst-homework-reminder\secrets.dat` | **Windows DPAPI 加密** |
+| 各平台账号（按平台分组） | `%APPDATA%\usst-homework-reminder\secrets.dat` → `accounts.<平台>` | **Windows DPAPI 加密** |
+| 发件邮箱、SMTP 授权码、收件人 | 同上文件 → `email` | **Windows DPAPI 加密** |
 | 登录 Cookie | `%APPDATA%\usst-homework-reminder\browser_state.json` | 目录 ACL 仅当前用户 |
 | 抓取到的课程与作业数据 | `%APPDATA%\usst-homework-reminder\_browser_raw.json` | 目录 ACL 仅当前用户 |
 | 发送记录、运行日志、静默名单 | 同上目录 | 目录 ACL 仅当前用户 |
@@ -30,7 +31,7 @@
 
 - ✅ **拷到别的电脑** → 解不开；
 - ✅ **被同一台电脑的其他 Windows 账户读取** → 解不开；
-- ✅ **重装系统 / 重设账户密钥后** → 解不开（需要重新运行 `python config_tool.py --setup`）；
+- ✅ **重装系统 / 重设账户密钥后** → 解不开（需要重新运行 `python config_tool.py --account` 和 `--email`）；
 - ⚠️ **同一账户下有恶意程序运行** → 能调用同样的 API 解密。这是操作系统层面的边界，任何本地程序都无法超越。
 
 因此它的实际效果是：**文件泄露 ≠ 密码泄露**。哪怕 `secrets.dat` 被发到网上，别人也拿不到你的密码。
@@ -65,7 +66,7 @@ git add -A --dry-run
 
 1. 立即修改统一身份认证密码；
 2. 重新生成邮箱 SMTP 授权码（旧码失效）；
-3. 运行 `python config_tool.py --reset` 清除本机会话，再重新 `--setup`；
+3. 运行 `python config_tool.py --reset` 清除本机会话，再重新 `--account` 和 `--email`；
 4. 若 `browser_state.json` 泄露过，第 1 步的改密码会使其立即失效。
 
 ---

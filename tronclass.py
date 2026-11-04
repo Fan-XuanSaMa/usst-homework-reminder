@@ -26,6 +26,15 @@ STATE = paths.STATE
 RAW = paths.RAW
 LOG = paths.LOG
 
+# ---- 平台元信息（platforms.py 通过它登记，config_tool 用它生成配置步骤）----
+KEY = "usst"
+NAME = "一网畅学"
+HOME = "https://1906.usst.edu.cn"
+CREDS = [
+    ("user", "学号", False),
+    ("password", "密码", True),
+]
+
 CST = timezone(timedelta(hours=8))
 LOGIN_ENTRY = "/login?next="
 HOME_RE = re.compile(r"^https?://1906\.usst\.edu\.cn")
@@ -209,20 +218,31 @@ def normalize(raw):
 
 
 def load_credentials():
-    """从加密存储读取学号密码；缺失时给出明确指引。"""
-    user = secrets.get("usst.user")
-    pwd = secrets.get("usst.password")
+    """从加密存储读取本平台账号；缺失时返回 None。"""
+    user = secrets.get(f"accounts.{KEY}.user")
+    pwd = secrets.get(f"accounts.{KEY}.password")
     if not user or not pwd:
+        return None
+    return {"user": user, "password": pwd}
+
+
+# platforms.py 统一按这个名字取凭据
+load_creds = load_credentials
+
+
+def fetch_with(creds=None):
+    """用给定凭据抓取。creds 为 None 时从加密存储读。"""
+    paths.ensure()
+    creds = creds or load_credentials()
+    if not creds:
         raise NotConfigured("尚未保存账号密码")
-    return user, pwd
+    raw = fetch_raw(creds["user"], creds["password"])
+    RAW.write_text(json.dumps(raw, ensure_ascii=False, indent=1), encoding="utf-8")
+    return normalize(raw)
 
 
 def fetch():
-    paths.ensure()
-    user, pwd = load_credentials()
-    raw = fetch_raw(user, pwd)
-    RAW.write_text(json.dumps(raw, ensure_ascii=False, indent=1), encoding="utf-8")
-    return normalize(raw)
+    return fetch_with(load_credentials())
 
 
 if __name__ == "__main__":

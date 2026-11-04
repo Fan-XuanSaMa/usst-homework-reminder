@@ -117,28 +117,57 @@ cd usst-homework-reminder
 pip install playwright pystray pillow
 ```
 
-**第 3 步**：运行配置向导，按提示输入学号、密码和邮箱：
+**第 3 步**：配置账号（学号 + 密码）
 
 ```bat
-python config_tool.py --setup
+python config_tool.py --account
 ```
 
-> 输入密码和授权码时屏幕不会显示字符，这是正常的；内容只存在内存中，保存时立即加密。
+只问两个问题：学号、密码。输密码时屏幕不显示字符，这是正常的。
+
 > 配置会存到 `%APPDATA%\usst-homework-reminder\`，**不在项目目录里**。
 
-**第 4 步**：验证邮箱配置：
+**第 4 步**：验证能登录并抓到作业
+
+```bat
+python tronclass.py
+```
+
+看到「抓到 N 个作业」就说明账号配置正确。这一步不涉及邮箱。
+
+**第 5 步**：配置提醒邮箱
+
+```bat
+python config_tool.py --email
+```
+
+只问三个问题：发件邮箱、授权码、收件邮箱（收件邮箱直接回车即等于发件邮箱）。
+服务器地址和端口按邮箱域名自动识别，不用手填。
+
+**第 6 步**：验证邮箱配置
 
 ```bat
 python remind.py --test-email
 ```
 
-**第 5 步**：启动托盘并注册开机自启：
+**第 7 步**：先预览再正式跑一次
+
+```bat
+python remind.py --dry-run
+python remind.py
+```
+
+`--dry-run` 只打印会发什么邮件，不真发、不消耗每天一封的额度。
+
+**第 8 步**：启动托盘并注册开机自启
 
 ```bat
 python install.py
 ```
 
 任务栏右下角会出现一个蓝色图标。
+
+> 如果没配完就跑 `install.py`，它会直接告诉你还差哪几步、该执行什么命令。
 
 > 如果提示「找不到可用浏览器」，执行 `python -m playwright install chromium` 后重试。
 
@@ -150,8 +179,17 @@ python install.py
 
 | 类型 | 位置 | 内容 |
 |---|---|---|
-| **非敏感设置** | 项目目录 `config.json` | 提醒天数、检查间隔、SMTP 服务器地址与端口 |
-| **敏感凭据** | `%APPDATA%\usst-homework-reminder\secrets.dat` | 学号、密码、发件邮箱、SMTP 授权码、收件邮箱 |
+| **非敏感设置** | 项目目录 `config.json` | 提醒天数、检查间隔 |
+| **敏感凭据** | `%APPDATA%\usst-homework-reminder\secrets.dat` | 各平台账号（按平台分组）、发件邮箱、SMTP 授权码、收件邮箱 |
+
+账号按平台分开存放，以后接入其他作业平台时互不影响：
+
+```
+secrets.dat
+├── accounts
+│   └── usst          ← 一网畅学的学号 / 密码
+└── email             ← 发件邮箱 / 授权码 / 收件邮箱 / 服务器
+```
 
 `secrets.dat` 使用 **Windows DPAPI** 加密，**只有当前 Windows 账户能解密**。
 文件被复制到其他电脑或其他账户后无法还原，因此可以放心地把它排除在代码仓库之外。
@@ -167,25 +205,34 @@ python config_tool.py --show
 ```
 配置目录： C:\Users\<用户名>\AppData\Roaming\usst-homework-reminder
 凭据文件： ...\secrets.dat （DPAPI 加密）
-  学号    ： 253****118
-  密码    ： 03*****cf （9 位）
-  收件邮箱： ab****@qq.com
+
+== 作业平台账号 ==
+  一网畅学  ： 253****118  密码 03*****cf（9 位）
+
+== 提醒邮箱 ==
   发件邮箱： ab****@qq.com
+  收件邮箱： ab****@qq.com
   授权码  ： ab************cd
+  服务器  ： smtp.qq.com 465
 ```
 
 ### 修改配置
 
-- 改密码、换邮箱、换收件地址：重新运行 `python config_tool.py --setup`；
-- 只改提醒天数/检查间隔：直接编辑项目目录的 `config.json`。
+| 想改什么 | 命令 |
+|---|---|
+| 学号 / 密码 | `python config_tool.py --account` |
+| 发件邮箱 / 授权码 / 收件邮箱 | `python config_tool.py --email` |
+| 提醒天数 / 检查间隔 | 直接编辑项目目录的 `config.json` |
 
-### 清除所有凭据
+两项配置互不影响：只改邮箱不会动账号，只改账号也不会动邮箱。
+
+### 清除凭据
 
 ```bat
-python config_tool.py --reset
+python config_tool.py --reset-account   # 只清账号与登录状态
+python config_tool.py --reset-email     # 只清邮箱配置
+python config_tool.py --reset           # 全部清除
 ```
-
-会删除加密凭据和登录状态，下次启动需要重新配置。
 
 ### 从旧版本升级
 
@@ -196,7 +243,8 @@ python config_tool.py --reset
 python config_tool.py --import
 ```
 
-迁移后，账号密码进入加密存储，项目内的明文会被清除。
+迁移后，账号密码进入加密存储，项目内的明文会被清除。旧版 `secrets.dat` 的凭据结构也会在读取时
+自动升级为按平台分组，不需要重新输入。
 
 ---
 
@@ -211,12 +259,12 @@ python config_tool.py --import
 3. 找到 **「POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV服务」**；
 4. 开启 **「POP3/SMTP服务」** 或 **「IMAP/SMTP服务」**；
 5. 按提示用手机发短信验证，页面会给出一串 **16 位授权码**（形如 `abcdabcdabcdabcd`，**没有空格**）；
-6. 运行 `python config_tool.py --setup`，按提示填入：
-   - 收件邮箱：接收提醒的地址（可以就是你自己）
+6. 运行 `python config_tool.py --email`，只填三项：
    - 发件邮箱：你的 QQ 邮箱地址
-   - SMTP 授权码：上一步拿到的 16 位码
-   - SMTP 服务器：留空即自动识别为 `smtp.qq.com`
-   - SMTP 端口：直接回车用 `465`
+   - 授权码：上一步拿到的 16 位码
+   - 收件邮箱：接收提醒的地址，**直接回车**即等于发件邮箱
+
+> 服务器和端口无需填写，按邮箱域名自动识别（QQ 邮箱 → `smtp.qq.com:465`）。
 
 > 授权码只显示一次，请当场复制保存。忘了可以重新生成（旧码会立即失效）。
 
@@ -225,7 +273,7 @@ python config_tool.py --import
 1. 登录 [mail.163.com](https://mail.163.com)；
 2. 顶部 **设置** → **POP3/SMTP/IMAP**；
 3. 开启 **SMTP服务**，按提示设置授权密码（同样不是登录密码）；
-4. 在配置向导里填发件邮箱和授权码，SMTP 服务器填 `smtp.163.com`，端口 `465`。
+4. 在配置向导里填发件邮箱和授权码（收件邮箱可回车同发件邮箱），服务器自动识别。
 
 ### 方案 C：学校邮箱
 
@@ -286,11 +334,15 @@ python remind.py --test-email
 | 预览今天会发什么邮件（不真发） | `python remind.py --dry-run` |
 | 正常检查并发送 | `python remind.py` |
 | 测试邮件配置 | `python remind.py --test-email` |
-| 重新配置账号/邮箱 | `python config_tool.py --setup` |
+| 配置账号（学号+密码） | `python config_tool.py --account` |
+| 配置邮箱（发件+授权码） | `python config_tool.py --email` |
 | 查看配置（打码） | `python config_tool.py --show` |
+| 只清账号 / 只清邮箱 | `python config_tool.py --reset-account` / `--reset-email` |
 | 启动托盘 + 开机自启 | `python install.py` |
 | 停止托盘 | `python install.py --stop` |
 | 移除开机自启 | `python install.py --uninstall` |
+
+> `python config_tool.py` 不带参数时，会只问你还缺的那一项，已配好的不会重问。
 
 ### 静默某个作业
 
@@ -333,7 +385,8 @@ python remind.py --test-email
 
 | 文件 | 作用 |
 |---|---|
-| `tronclass.py` | 登录 + 抓取作业 |
+| `tronclass.py` | 登录 + 抓取作业（一网畅学平台模块） |
+| `platforms.py` | 平台注册表，决定启用哪些作业平台 |
 | `remind.py` | 提醒策略 + 发邮件 |
 | `tray.py` | 托盘常驻程序 |
 | `install.py` | 安装 / 停止 / 卸载 |
@@ -366,14 +419,18 @@ python remind.py --test-email
 
 | 可能原因 | 处理 |
 |---|---|
-| 统一身份认证密码改了 | 运行 `python config_tool.py --setup` 重新填写 |
+| 统一身份认证密码改了 | 运行 `python config_tool.py --account` 重新填写 |
 | 认证页面改版 / 需要验证码 | 手动用浏览器登录一次 `https://1906.usst.edu.cn`，看看是否要验证码；如果学校改了页面，需要更新 `tronclass.py` 里的选择器 |
 | 网络不稳定 | 等下一轮（15 分钟后）自动重试 |
 | 一网畅学接口变更 | 运行 `python tronclass.py` 查看具体报错 |
 
 ### 提示「尚未保存账号密码」
 
-运行 `python config_tool.py --setup` 完成配置。
+运行 `python config_tool.py --account` 完成账号配置。
+
+### 提示「尚未配置提醒邮箱」
+
+运行 `python config_tool.py --email` 完成邮箱配置。这条只影响发信，不影响 `python tronclass.py` 抓取。
 
 ### 提示「无法读取凭据文件」
 
@@ -383,7 +440,7 @@ python remind.py --test-email
 - 换了 Windows 登录账户；
 - 手动从别处拷贝了 `secrets.dat`。
 
-处理方式：运行 `python config_tool.py --reset`，再 `python config_tool.py --setup` 重新填写。
+处理方式：运行 `python config_tool.py --reset-account`，再 `python config_tool.py --account` 重新填写。
 
 ### 抓取正常但作业数是 0
 
@@ -424,6 +481,26 @@ python remind.py --test-email
   - `GET /api/courses/{id}/homework-activities` — 作业与截止时间（`deadline`、`submitted`）
   - `GET /api/course/{id}/homework/submission-status` — 提交状态（`status_code`）
 - 时间：接口返回 UTC，程序统一换算为北京时间（UTC+8）。
+
+### 接入其他作业平台
+
+代码已按平台插件化。一网畅学就是一个平台模块，新增平台不需要改抓取、提醒、托盘逻辑：
+
+1. 新建模块（例如 `chaoxing.py`），提供：
+
+| 属性 | 含义 |
+|---|---|
+| `KEY` | 凭据键名，如 `"chaoxing"` |
+| `NAME` | 显示名，如 `"超星学习通"` |
+| `HOME` | 平台首页 URL |
+| `CREDS` | 需要填的账号字段，如 `[("user","手机号",False),("password","密码",True)]` |
+| `load_creds()` | 返回账号 dict 或 `None`（未配置） |
+| `fetch()` | 返回统一结构的作业列表 |
+
+2. 在 `platforms.py` 的 `PLATFORMS` 列表里加上模块名。
+
+之后 `config_tool.py --account` 会自动列出该平台，托盘菜单会出现对应入口，抓取结果与一网畅学合并计算提醒。
+凭据分别存在 `secrets.dat` 的 `accounts.<KEY>` 下，互不干扰。
 
 ---
 

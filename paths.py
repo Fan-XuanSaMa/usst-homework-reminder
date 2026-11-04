@@ -15,7 +15,7 @@
 import os
 from pathlib import Path
 
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"

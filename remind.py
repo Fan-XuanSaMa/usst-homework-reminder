@@ -33,7 +33,6 @@ MUTE_FILE = paths.MUTE_FILE
 DEFAULT_CONFIG = {
     "remind_days_before": 5,
     "check_interval_minutes": 15,
-    "smtp": {"host": "smtp.qq.com", "port": 465},
 }
 
 
@@ -47,7 +46,6 @@ def load_config():
         return dict(DEFAULT_CONFIG)
     merged = dict(DEFAULT_CONFIG)
     merged.update(cfg)
-    merged["smtp"] = {**DEFAULT_CONFIG["smtp"], **(cfg.get("smtp") or {})}
     return merged
 
 
@@ -144,25 +142,23 @@ def rec_for(state, a):
 # ---------- 邮件 ----------
 
 def send_email(subject, body, dry_run=False):
-    smtp = CONFIG.get("smtp") or {}
-    user = secrets.get("smtp.user")
-    auth_code = secrets.get("smtp.auth_code")
-    recipient = secrets.get("recipient")
-    if not user or not auth_code or not recipient:
-        raise NotConfigured("尚未保存邮箱配置")
+    cfg = secrets.email_config()
+    if dry_run:
+        to = secrets.mask_email(cfg["recipient"]) if cfg else "（尚未配置收件邮箱）"
+        print(f"[dry-run] 邮件 -> {to}\n  标题：{subject}\n{body}\n")
+        return
+    if not cfg:
+        raise NotConfigured("尚未配置提醒邮箱")
     msg = EmailMessage()
-    msg["From"] = f"{Header('上理作业提醒', 'utf-8').encode()} <{user}>"
-    msg["To"] = recipient
+    msg["From"] = f"{Header('上理作业提醒', 'utf-8').encode()} <{cfg['sender']}>"
+    msg["To"] = cfg["recipient"]
     msg["Subject"] = subject
     msg.set_content(body)
-    if dry_run:
-        print(f"[dry-run] 邮件 -> {recipient}\n  标题：{subject}\n{body}\n")
-        return
     last_err = None
     for attempt in range(3):
         try:
-            with smtplib.SMTP_SSL(smtp.get("host", "smtp.qq.com"), int(smtp.get("port", 465)), timeout=30) as s:
-                s.login(user, auth_code)
+            with smtplib.SMTP_SSL(cfg["host"], int(cfg["port"]), timeout=30) as s:
+                s.login(cfg["sender"], cfg["auth_code"])
                 s.send_message(msg)
             return
         except (smtplib.SMTPException, ConnectionError, OSError) as e:
@@ -175,11 +171,13 @@ def send_email(subject, body, dry_run=False):
 
 def check(items=None, dry_run=False):
     if items is None:
-        import tronclass
-        try:
-            items = tronclass.fetch()
-        except tronclass.NotConfigured as e:
-            raise NotConfigured(str(e)) from e
+        import platforms
+        mods = platforms.configured()
+        if not mods:
+            raise NotConfigured("尚未保存账号密码")
+        items = []
+        for mod in mods:
+            items.extend(mod.fetch())
 
     mutes = load_mutes()
     active = [a for a in items if not is_muted(a, mutes)]
@@ -296,11 +294,14 @@ def main():
                 f"这是一封测试邮件（{now():%Y-%m-%d %H:%M}）。收到说明 SMTP 配置正确。\n",
                 dry_run=dry,
             )
+        except NotConfigured as e:
+            print(f"{e}\n运行：python config_tool.py --email")
+            return 2
         except Exception as e:
             print("测试邮件发送失败:", e)
             return 1
         if not dry:
-            print("测试邮件已发送到", secrets.get("recipient"))
+            print("测试邮件已发送到", secrets.mask_email(secrets.email_config()["recipient"]))
         return 0
 
     try:
@@ -310,7 +311,9 @@ def main():
     except Exception as e:
         # 未配置属于正常状态，不算故障，不触发告警
         if isinstance(e, NotConfigured):
-            print(f"{e}\n运行：python config_tool.py --setup")
+            print(f"{e}")
+            print("运行 python config_tool.py --account 配置账号" if "账号" in str(e)
+                  else "运行 python config_tool.py --email 配置邮箱")
             return 2
         msg = f"{type(e).__name__}: {e}"
         print("失败:", msg)
