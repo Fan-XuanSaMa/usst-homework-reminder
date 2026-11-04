@@ -156,14 +156,6 @@ python config_tool.py --reset           # 全清，从头再来
 
 先确认学校邮箱开不开 SMTP。开的话，服务器通常是 `smtp.` + 邮箱域名，端口 465。不确定就问信息办，别问程序。
 
-### 发不出去时
-
-| 报错 | 大概率是 |
-|---|---|
-| `Authentication failed` / `535` | 授权码错了，或者 SMTP 服务压根没开 |
-| `Connection refused` / 超时 | 端口被网络挡了，换手机热点试试 |
-| `UnicodeEncodeError` | 授权码里混了中文或全角字符，重新复制 |
-
 ## 日常使用
 
 托盘图标右键，能干这些：
@@ -231,48 +223,16 @@ python config_tool.py --reset           # 全清，从头再来
 | 托盘图标不见了 | 任务管理器看有没有 `pythonw.exe`；启动文件夹里有没有 `usst_homework_reminder.vbs`；没有就重跑 `install.py` |
 | 关机 / 睡眠错过检查 | 不补发。醒来后看的是最新状态，不会拿旧数据吓你 |
 
-## 隐私：你的密码不归我管
+## 未来目标
 
-- 账号和授权码用 **Windows DPAPI** 加密，只有这台电脑的这个 Windows 账户能解开；
-- Cookie、作业数据、日志、静默名单全在 `%APPDATA%`，不在项目目录；
-- 项目目录里没有任何密码、Cookie 或个人作业数据，可以直接分享；
-- 对外只连两个地方：一网畅学，和你自己的 SMTP 服务器。没有中间商。
+一网畅学只是起点。作业散落在越多地方，越需要有人统一盯着，所以接下来想把这些平台也接进来：
 
-更完整的威胁模型和泄露处置，见 [SECURITY.md](SECURITY.md)。
-
-## 文件都在哪
-
-项目目录（可以分享）：
-
-| 文件 | 作用 |
+| 平台类型 | 目标平台 |
 |---|---|
-| `tronclass.py` | 登录 + 抓一网畅学的作业 |
-| `platforms.py` | 平台注册表，决定启用哪些平台 |
-| `remind.py` | 判断该不该提醒 + 发邮件 |
-| `tray.py` | 托盘常驻 |
-| `install.py` | 安装、停止、卸载 |
-| `config_tool.py` | 配置工具 |
-| `paths.py` / `secrets_store.py` | 路径管理 / DPAPI 读写 |
-| `config.json` | 提醒天数、检查间隔（无账号密码） |
-| `README.md` / `SECURITY.md` / `LICENSE` | 你现在看的这些 |
+| 主流网页平台 | 学习通、超星、智慧树等 |
+| 小程序平台 | 数你最灵等 |
 
-个人数据目录（**不要分享**）：`%APPDATA%\usst-homework-reminder\`
-
-| 文件 | 内容 |
-|---|---|
-| `secrets.dat` | 账号、密码、邮箱、授权码（加密） |
-| `browser_state.json` | 登录 Cookie，等于登录态 |
-| `_browser_raw.json` | 抓到的课程和作业 |
-| `sent_log.json` | 发送记录，用来保证每天一封 |
-| `mute.txt` | 静默名单（可能含课程名） |
-| `reminder.log` | 运行日志 |
-| `daemon.pid` / `daemon.stop` / `mute.until` | 运行控制 |
-
-## 想接别的作业平台？
-
-一网畅学只是 `platforms.py` 里的一个条目。新增平台：写一个模块，提供 `KEY`、`NAME`、`HOME`、`CREDS`、`load_creds()`、`fetch()`，再把模块名加进 `PLATFORMS` 列表。配置工具、托盘、提醒逻辑都不用改。
-
-细节看代码里的注释，或者直接照抄 `tronclass.py`。
+接入后统一按同样的规则提醒：谁的作业快截止了就说一声，不用几个 App 来回切。
 
 ## 给好奇的人：技术细节
 
