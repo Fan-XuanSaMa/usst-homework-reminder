@@ -102,11 +102,14 @@
 
 ### 步骤
 
-**第 1 步**：打开命令提示符（Win + R 输入 `cmd` 回车），进入本项目所在目录：
+**第 1 步**：打开命令提示符（Win + R 输入 `cmd` 回车），克隆并进入项目目录：
 
 ```bat
-cd /d "项目所在目录"
+git clone https://github.com/Fan-XuanSaMa/usst-homework-reminder.git
+cd usst-homework-reminder
 ```
+
+> 如果下载的是 ZIP 包，解压后 `cd /d "解压后的目录"` 即可。
 
 **第 2 步**：安装依赖（只需一次）：
 
