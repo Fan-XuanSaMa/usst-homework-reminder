@@ -1,0 +1,26 @@
+# ============ 个人数据（正常情况下已不在项目目录，此处为双保险）============
+config.json
+secrets.dat
+browser_state.json
+_browser_raw.json
+sent_log.json
+reminder.log
+daemon.pid
+daemon.stop
+mute.until
+mute.txt
+
+# ============ 临时/测试产物 ============
+_probe/
+_probe_screenshot.png
+_login_state.json
+_*.py
+*.tmp
+*.bak
+
+# ============ Python ============
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/

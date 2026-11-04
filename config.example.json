@@ -1,0 +1,8 @@
+{
+  "remind_days_before": 5,
+  "check_interval_minutes": 15,
+  "smtp": {
+    "host": "smtp.qq.com",
+    "port": 465
+  }
+}
