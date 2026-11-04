@@ -37,7 +37,12 @@ def log(msg):
 
 def load_cfg():
     import json
-    return json.loads((BASE / "config.json").read_text(encoding="utf-8"))
+    if not paths.CONFIG.exists():
+        return {}
+    try:
+        return json.loads(paths.CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def muted_today():

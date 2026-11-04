@@ -22,17 +22,42 @@ import time
 from datetime import datetime, timedelta
 from email.header import Header
 from email.message import EmailMessage
-from pathlib import Path
 
 import paths
 import secrets_store as secrets
 
 BASE = paths.BASE
-CONFIG = json.loads(paths.CONFIG.read_text(encoding="utf-8"))
 STATE_FILE = paths.SENT_LOG
 MUTE_FILE = paths.MUTE_FILE
 
+DEFAULT_CONFIG = {
+    "remind_days_before": 5,
+    "check_interval_minutes": 15,
+    "smtp": {"host": "smtp.qq.com", "port": 465},
+}
+
+
+def load_config():
+    """读取非敏感设置；全新克隆还没有 config.json 时用默认值。"""
+    if not paths.CONFIG.exists():
+        return dict(DEFAULT_CONFIG)
+    try:
+        cfg = json.loads(paths.CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return dict(DEFAULT_CONFIG)
+    merged = dict(DEFAULT_CONFIG)
+    merged.update(cfg)
+    merged["smtp"] = {**DEFAULT_CONFIG["smtp"], **(cfg.get("smtp") or {})}
+    return merged
+
+
+CONFIG = load_config()
+
 CST = timedelta(hours=8)
+
+
+class NotConfigured(RuntimeError):
+    """尚未完成账号/邮箱配置。属于正常状态，不触发故障告警。"""
 
 
 def now():
@@ -124,7 +149,7 @@ def send_email(subject, body, dry_run=False):
     auth_code = secrets.get("smtp.auth_code")
     recipient = secrets.get("recipient")
     if not user or not auth_code or not recipient:
-        raise RuntimeError("尚未保存邮箱配置，请先运行：python config_tool.py --setup")
+        raise NotConfigured("尚未保存邮箱配置")
     msg = EmailMessage()
     msg["From"] = f"{Header('上理作业提醒', 'utf-8').encode()} <{user}>"
     msg["To"] = recipient
@@ -151,7 +176,10 @@ def send_email(subject, body, dry_run=False):
 def check(items=None, dry_run=False):
     if items is None:
         import tronclass
-        items = tronclass.fetch()
+        try:
+            items = tronclass.fetch()
+        except tronclass.NotConfigured as e:
+            raise NotConfigured(str(e)) from e
 
     mutes = load_mutes()
     active = [a for a in items if not is_muted(a, mutes)]
@@ -262,26 +290,36 @@ def main():
     args = sys.argv[1:]
     dry = "--dry-run" in args
     if "--test-email" in args:
-        send_email(
-            "[上理作业提醒] 配置测试邮件",
-            f"这是一封测试邮件（{now():%Y-%m-%d %H:%M}）。收到说明 SMTP 配置正确。\n",
-            dry_run=dry,
-        )
+        try:
+            send_email(
+                "[上理作业提醒] 配置测试邮件",
+                f"这是一封测试邮件（{now():%Y-%m-%d %H:%M}）。收到说明 SMTP 配置正确。\n",
+                dry_run=dry,
+            )
+        except Exception as e:
+            print("测试邮件发送失败:", e)
+            return 1
         if not dry:
-            print("测试邮件已发送到", CONFIG["recipient"])
-        return
+            print("测试邮件已发送到", secrets.get("recipient"))
+        return 0
+
     try:
         summary, _ = check(dry_run=dry)
         print(summary)
+        return 0
     except Exception as e:
+        # 未配置属于正常状态，不算故障，不触发告警
+        if isinstance(e, NotConfigured):
+            print(f"{e}\n运行：python config_tool.py --setup")
+            return 2
         msg = f"{type(e).__name__}: {e}"
         print("失败:", msg)
         try:
             send_failure_alert(msg, dry_run=dry)
         except Exception as e2:
-            print("告警邮件也没发出去:", e2)
-        sys.exit(1)
+            print("（告警邮件未发送：", e2, "）")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

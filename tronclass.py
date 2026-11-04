@@ -86,6 +86,10 @@ class LoginError(RuntimeError):
     """自动登录失败（密码错、验证码、门户改版等）。"""
 
 
+class NotConfigured(LoginError):
+    """尚未填账号密码。属于正常状态，不触发故障告警。"""
+
+
 def _launch(p):
     """依次尝试系统 Edge、Chrome，最后退回 Playwright 自带 Chromium。"""
     last = None
@@ -209,7 +213,7 @@ def load_credentials():
     user = secrets.get("usst.user")
     pwd = secrets.get("usst.password")
     if not user or not pwd:
-        raise LoginError("尚未保存账号密码，请先运行：python config_tool.py --setup")
+        raise NotConfigured("尚未保存账号密码")
     return user, pwd
 
 

@@ -24,25 +24,37 @@ class _Blob(ctypes.Structure):
     _fields_ = [("cbData", wt.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
 
 
-def _blob(data: bytes):
-    buf = ctypes.create_string_buffer(data, len(data))
-    return _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+def _make_blob(data: bytes):
+    """返回 (blob, buf)。buf 必须被调用方持有，否则可能在系统调用前被回收。"""
+    buf = ctypes.create_string_buffer(data, len(data) or 1)
+    blob = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    return blob, buf
 
 
 def _dpapi(protect: bool, data: bytes) -> bytes:
     crypt32 = ctypes.windll.crypt32
     kernel32 = ctypes.windll.kernel32
-    blob_in = _blob(data)
+    blob_in, buf_in = _make_blob(data)   # 保持 buf_in 引用存活
     blob_out = _Blob()
-    desc = ctypes.c_wchar_p("usst-homework-reminder")
+
+    # 显式声明参数类型，避免 64 位指针被截断
+    LPVOID_P = ctypes.c_void_p
     fn = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
-    ok = fn(ctypes.byref(blob_in), desc, None, None, None, 0, ctypes.byref(blob_out))
+    fn.argtypes = [
+        ctypes.POINTER(_Blob), LPVOID_P, ctypes.POINTER(_Blob),
+        LPVOID_P, LPVOID_P, wt.DWORD, ctypes.POINTER(_Blob),
+    ]
+    fn.restype = wt.BOOL
+
+    desc = "usst-homework-reminder"
+    ok = fn(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
     if not ok:
         raise SecretError(f"DPAPI {'加密' if protect else '解密'}失败（错误码 {kernel32.GetLastError()}）")
     try:
         return ctypes.string_at(blob_out.pbData, blob_out.cbData)
     finally:
         kernel32.LocalFree(blob_out.pbData)
+        del buf_in, desc
 
 
 def _available():
