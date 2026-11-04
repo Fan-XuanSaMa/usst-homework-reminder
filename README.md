@@ -15,7 +15,7 @@
 
 程序只读作业信息，不改课程、不提交任何东西。
 
-## 三分钟装好
+## 一分钟装好
 
 需要 Windows 10/11、Python 3.10+，以及 Edge 或 Chrome（有一个就行，不用另装浏览器）。
 
@@ -233,15 +233,6 @@ python config_tool.py --reset           # 全清，从头再来
 | 小程序平台 | 数你最灵等 |
 
 接入后统一按同样的规则提醒：谁的作业快截止了就说一声，不用几个 App 来回切。
-
-## 给好奇的人：技术细节
-
-- 一网畅学底层是 **TronClass**，认证走 Keycloak → CAS → ids6；
-- 用到的接口：
-  - `GET /api/user/recently-visited-courses` — 课程列表
-  - `GET /api/courses/{id}/homework-activities` — 作业和截止时间
-  - `GET /api/course/{id}/homework/submission-status` — 提交状态
-- 接口返回 UTC，程序统一换成北京时间（UTC+8）。
 
 ## 许可
 
