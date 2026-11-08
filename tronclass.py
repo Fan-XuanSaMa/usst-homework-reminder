@@ -99,6 +99,21 @@ class NotConfigured(LoginError):
     """尚未填账号密码。属于正常状态，不触发故障告警。"""
 
 
+# 登录失败时的错误提示、页面地址都可能回显学号，写日志/告警邮件前先打码
+_PHONE_RE = re.compile(r"(?<!\d)(1[3-9]\d)\d{4}(\d{4})(?!\d)")
+# 学号：连续 8~12 位数字，手机号规则没命中时兜底
+_STUDENT_RE = re.compile(r"(?<!\d)(\d{2})\d{4,}(\d{2})(?!\d)")
+_EMAIL_RE = re.compile(r"([\w.%+-])[\w.%+-]*(@[\w.-]+\.[a-z]{2,})", re.I)
+
+
+def _mask_account(text):
+    """把学号、手机号、邮箱打码，避免账号进入日志或故障告警邮件。"""
+    text = text or ""
+    text = _EMAIL_RE.sub(r"\1***\2", text)
+    text = _PHONE_RE.sub(r"\1****\2", text)
+    return _STUDENT_RE.sub(r"\1****\2", text)
+
+
 def _launch(p):
     """依次尝试系统 Edge、Chrome，最后退回 Playwright 自带 Chromium。"""
     last = None
@@ -118,7 +133,7 @@ def _do_login(page, user, pwd):
     try:
         page.wait_for_selector("#username", timeout=30000)
     except Exception:
-        raise LoginError(f"没等到统一身份认证表单，当前地址：{page.url}")
+        raise LoginError(f"没等到统一身份认证表单，当前地址：{_mask_account(page.url)}")
     page.fill("#username", user)
     page.fill("#password", pwd)
     btn = page.locator("#login_submit, .auth_login_btn, button[type=submit]")
@@ -134,7 +149,7 @@ def _do_login(page, user, pwd):
             err = page.locator("#showErrorTip, .authError, .login-error").first.inner_text(timeout=2000)
         except Exception:
             err = ""
-        raise LoginError(f"登录未跳回门户（可能密码有误或需要验证码）：{err or detail}")
+        raise LoginError(f"登录未跳回门户（可能密码有误或需要验证码）：{_mask_account(err) or _mask_account(detail)}")
 
 
 def fetch_raw(user, pwd):

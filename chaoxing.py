@@ -106,7 +106,7 @@ def _do_login(page, user, pwd):
         page.wait_for_selector("#phone", timeout=20000)
         page.wait_for_selector("#pwd", timeout=20000)
     except Exception:
-        raise LoginError(f"没等到登录表单，当前地址：{page.url[:120]}")
+        raise LoginError(f"没等到登录表单，当前地址：{_mask_account(page.url[:120])}")
 
     page.fill("#phone", user)
     page.fill("#pwd", pwd)
@@ -132,7 +132,7 @@ def _do_login(page, user, pwd):
                 break
         except Exception:
             continue
-    raise LoginError(f"登录未成功（可能密码有误、需要验证码或二次验证）：{detail or page.url[:120]}")
+    raise LoginError(f"登录未成功（可能密码有误、需要验证码或二次验证）：{_mask_account(detail) or _mask_account(page.url[:120])}")
 
 
 # ---------- 抓取 ----------
@@ -154,6 +154,16 @@ TASK_JS = """() => Array.from(document.querySelectorAll('li[data1]')).map(li => 
 
 _LEFT_RE = re.compile(r"剩余\s*(?:(\d+)\s*天)?\s*(?:(\d+)\s*小时)?\s*(?:(\d+)\s*分)?")
 _DATED_RE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?")
+
+# 登录失败时的错误提示、页面地址都可能回显账号，写日志/告警邮件前先打码
+_PHONE_RE = re.compile(r"(?<!\d)(1[3-9]\d)\d{4}(\d{4})(?!\d)")
+_EMAIL_RE = re.compile(r"([\w.%+-])[\w.%+-]*(@[\w.-]+\.[a-z]{2,})", re.I)
+
+
+def _mask_account(text):
+    """把手机号、邮箱打码，避免账号进入日志或故障告警邮件。"""
+    text = _EMAIL_RE.sub(r"\1***\2", text or "")
+    return _PHONE_RE.sub(r"\1****\2", text)
 
 
 def parse_remaining(text, base=None):
@@ -283,7 +293,7 @@ def fetch_raw(creds):
                 _do_login(page, creds["user"], creds["password"])
                 courses = _load_courses(page)
             if not courses:
-                raise LoginError(f"没读到课程列表（登录后仍被跳转，或选课页面改版）：{page.url[:120]}")
+                raise LoginError(f"没读到课程列表（登录后仍被跳转，或选课页面改版）：{_mask_account(page.url[:120])}")
 
             ctx.storage_state(path=str(paths.CHAOXING_STATE))
 

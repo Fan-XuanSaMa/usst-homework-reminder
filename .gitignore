@@ -1,7 +1,11 @@
 # ============ 个人数据（正常情况下已不在项目目录，此处为双保险）============
 config.json
 secrets.dat
+*.dpapi
+*.key
 browser_state.json
+chaoxing_state.json
+*_state.json
 _browser_raw.json
 sent_log.json
 reminder.log
