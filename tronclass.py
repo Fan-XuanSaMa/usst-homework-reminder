@@ -202,7 +202,8 @@ def normalize(raw):
                 submitted = st.get("status_code") in ("submitted", "graded", "comment")
             due = parse_due(a.get("deadline") or a.get("end_time"))
             items.append({
-                "id": aid,
+                # 跨平台去重键：各平台的数字 ID 会撞车，必须带平台前缀
+                "id": f"{KEY}-{aid}",
                 "course": cname,
                 "course_id": cid,
                 "title": (a.get("title") or "").strip() or "(未命名作业)",
@@ -213,6 +214,7 @@ def normalize(raw):
                 "url": f"https://1906.usst.edu.cn/course/{cid}/homework/{aid}",
                 "needs_online": True,
                 "source": "homework-activities",
+                "platform": KEY,
             })
     return items
 

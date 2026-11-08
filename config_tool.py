@@ -45,18 +45,27 @@ def ask(prompt, default="", secret=False, allow_empty=False):
 # ---------- 账号 ----------
 
 def _platform_menu():
-    """返回可用平台；只有一个时直接用它。"""
+    """返回要配置的平台。
+
+    多平台时：已配置的会标出来，直接回车配第一个未配置的。
+    """
     mods = [m for m in platforms.enabled() if getattr(m, "CREDS", None)]
     if not mods:
         print("没有可用的作业平台模块。")
         return None
     if len(mods) == 1:
         return mods[0]
-    print("选择要配置的作业平台：")
+
+    def configured(m):
+        return bool(secrets.account(m.KEY))
+
+    default = next((i for i, m in enumerate(mods, 1) if not configured(m)), 1)
+    print("要配置哪个作业平台？")
     for i, m in enumerate(mods, 1):
-        print(f"  {i}. {m.NAME}（{getattr(m, 'HOME', '')}）")
+        mark = "（已配置）" if configured(m) else ""
+        print(f"  {i}. {m.NAME}{mark}")
     while True:
-        raw = ask("序号", "1")
+        raw = ask("序号", str(default))
         if raw is None:
             return None
         if raw.isdigit() and 1 <= int(raw) <= len(mods):
@@ -149,11 +158,10 @@ def guess_host(address):
 # ---------- 查看 / 清除 ----------
 
 def _status():
-    """返回 (缺少的项列表, 是否全部就绪)。"""
+    """返回 (缺少的项列表, 是否全部就绪)。只要有一个平台配好即可。"""
     missing = []
-    for m in platforms.enabled():
-        if not secrets.account(m.KEY):
-            missing.append(f"{m.NAME}账号")
+    if not any(secrets.account(m.KEY) for m in platforms.enabled()):
+        missing.append("至少一个平台账号")
     if not secrets.email_config():
         missing.append("提醒邮箱")
     return missing
@@ -215,11 +223,41 @@ def reset():
 
 def reset_account():
     d = secrets.load()
-    if d.get("accounts"):
+    accounts = d.get("accounts") or {}
+    if not accounts:
+        print("没有已保存的账号。")
+        return 0
+    mods = platforms.enabled()
+    if len(accounts) == 1:
+        key = next(iter(accounts))
+        name = next((m.NAME for m in mods if m.KEY == key), key)
         d["accounts"] = {}
         secrets.save(d)
+        _clear_common()
+        print(f"已清除 {name} 账号与登录状态。邮箱配置保留。")
+        return 0
+
+    print("要清除哪个平台的账号？")
+    keys = list(accounts)
+    for i, k in enumerate(keys, 1):
+        name = next((m.NAME for m in mods if m.KEY == k), k)
+        print(f"  {i}. {name}")
+    raw = ask("序号（直接回车＝全部清除）", "", allow_empty=True)
+    if raw is None:
+        return 1
+    if not raw:
+        d["accounts"] = {}
+        secrets.save(d)
+        _clear_common()
+        print("已清除全部平台账号与登录状态。邮箱配置保留。")
+        return 0
+    if not (raw.isdigit() and 1 <= int(raw) <= len(keys)):
+        print("序号无效，已取消。")
+        return 1
+    d["accounts"].pop(keys[int(raw) - 1], None)
+    secrets.save(d)
     _clear_common()
-    print("已清除作业平台账号与登录状态。邮箱配置保留。")
+    print("已清除该平台账号与登录状态。邮箱配置保留。")
     return 0
 
 
@@ -306,10 +344,12 @@ def migrate():
 # ---------- 入口 ----------
 
 def first_unconfigured():
-    """返回第一个需要配置的步骤名，全部就绪返回 None。"""
-    for m in platforms.enabled():
-        if not secrets.account(m.KEY):
-            return "account"
+    """返回还需要配置的步骤名，全部就绪返回 None。
+
+    平台账号只要求「至少配一个」，不会因为没配第二个平台而反复追问。
+    """
+    if not any(secrets.account(m.KEY) for m in platforms.enabled()):
+        return "account"
     if not secrets.email_config():
         return "email"
     return None

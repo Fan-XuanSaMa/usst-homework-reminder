@@ -1,7 +1,8 @@
 # 上理作业提交提醒
 
 > 一个住在你电脑里的 DDL 守门员。
-> 它替你登录一网畅学，把「快截止又没交」的作业打包成一封邮件，每天最多喊你一次。
+> 它替你登录作业平台，把「快截止又没交」的作业打包成一封邮件，每天最多喊你一次。
+> 目前已接入：**一网畅学**、**超星学习通**。
 
 ## 它能干什么
 
@@ -24,8 +25,9 @@ git clone https://github.com/Fan-XuanSaMa/usst-homework-reminder.git
 cd usst-homework-reminder
 pip install playwright pystray pillow
 
-python config_tool.py --account    # 学号 + 密码
-python tronclass.py                # 试抓一次，确认账号没问题
+python config_tool.py --account    # 选平台，填账号密码
+python tronclass.py                # 一网畅学：试抓一次
+python chaoxing.py                 # 学习通：试抓一次
 python config_tool.py --email      # 发件邮箱 + 授权码
 python remind.py --test-email      # 试发一封
 python install.py                  # 托盘 + 开机自启
@@ -33,14 +35,21 @@ python install.py                  # 托盘 + 开机自启
 
 | 步骤 | 成功的样子 |
 |---|---|
-| `--account` | 只问学号、密码。输密码时屏幕没反应是正常的，不是卡了 |
-| `tronclass.py` | 打印「抓到 N 个作业」。N=0 也别急着骂程序，可能老师真没布置 |
+| `--account` | 有多个平台时会让你选。想两个都监控，就再跑一次选另一个 |
+| `tronclass.py` / `chaoxing.py` | 打印「抓到 N 个作业」。N=0 也别急着骂程序，可能老师真没布置 |
 | `--email` | 只问发件邮箱、授权码、收件邮箱。收件邮箱直接回车，就等于发件邮箱 |
 | `--test-email` | 邮箱收到测试信。没收到先翻垃圾箱，QQ 邮箱对谁都一样严格 |
 | `install.py` | 任务栏右下角多一个蓝色图标 |
 
 > 没配完就跑 `install.py`，它会直接告诉你还缺哪一步，不用猜。
 > 提示「找不到可用浏览器」时，执行 `python -m playwright install chromium`。
+
+### 学习通的两个特殊情况
+
+- **登录要验证码时**，自动登录会失败。运行一次 `python chaoxing.py --login`，
+  在弹出的窗口里扫码或手动登录，会话就存下来了，之后程序自己复用。
+- 学习通作业页只给「剩余 21 小时」这种相对时间，不给绝对时刻。所以截止时间是
+  按抓取那一刻推算的，精确到分钟；程序每轮检查都会重新算，不会越跑越偏。
 
 ## 它什么时候会烦你
 
@@ -87,11 +96,14 @@ python install.py                  # 托盘 + 开机自启
 
 | 想配什么 | 命令 |
 |---|---|
-| 学号 / 密码 | `python config_tool.py --account` |
+| 平台账号（学号密码 / 学习通手机号密码） | `python config_tool.py --account` |
 | 发件邮箱 / 授权码 / 收件邮箱 | `python config_tool.py --email` |
 | 看看配成什么样（自动打码） | `python config_tool.py --show` |
+| 只清某个平台的账号 | `python config_tool.py --reset-account` |
 
 只改邮箱不会动账号，只改账号也不会动邮箱。不带参数运行 `python config_tool.py`，它只问还缺的那一项，已经配好的不重复盘问。
+
+平台账号是**按平台各存一份**的：两个平台都想监控就配两次，只监控一个也完全可以。
 
 配置存在两个地方：
 
@@ -165,7 +177,7 @@ python config_tool.py --reset           # 全清，从头再来
 | 未提交 N 个 | 只显示，点不动 |
 | 作业名（剩 X 天） | 点一下直接打开作业页面 |
 | 立即检查 | 马上查一轮（不会强行发信） |
-| 打开一网畅学 | 打开课程首页 |
+| 打开一网畅学 / 学习通 | 打开对应平台的课程首页 |
 | 查看日志 | 用记事本打开运行记录 |
 | 编辑静默名单 | 打开静默规则文件 |
 | 静音到明天 8:00 | 今天彻底闭嘴 |
@@ -177,7 +189,9 @@ python config_tool.py --reset           # 全清，从头再来
 
 | 想做 | 命令 |
 |---|---|
-| 只看抓到了什么 | `python tronclass.py` |
+| 只看一网畅学抓到了什么 | `python tronclass.py` |
+| 只看学习通抓到了什么 | `python chaoxing.py` |
+| 学习通登录要验证码时手动扫码 | `python chaoxing.py --login` |
 | 预览邮件但不发 | `python remind.py --dry-run` |
 | 正常检查并发信 | `python remind.py` |
 | 单独测邮箱 | `python remind.py --test-email` |
@@ -225,12 +239,14 @@ python config_tool.py --reset           # 全清，从头再来
 
 ## 未来目标
 
-一网畅学只是起点。作业散落在越多地方，越需要有人统一盯着，所以接下来想把这些平台也接进来：
+目前接入了两个平台，作业散落在越多地方，越需要有人统一盯着：
 
-| 平台类型 | 目标平台 |
+| 平台 | 状态 |
 |---|---|
-| 主流网页平台 | 学习通、超星、智慧树等 |
-| 小程序平台 | 数你最灵等 |
+| 一网畅学 | ✅ 已接入 |
+| 超星学习通 | ✅ 已接入 |
+| 智慧树等其他网页平台 | 计划中 |
+| 数你最灵等小程序平台 | 计划中 |
 
 接入后统一按同样的规则提醒：谁的作业快截止了就说一声，不用几个 App 来回切。
 

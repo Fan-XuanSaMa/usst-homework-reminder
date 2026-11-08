@@ -132,9 +132,21 @@ def _parse_iso(s):
         return None
 
 
+def _state_key(a):
+    """跨平台去重键。
+
+    一网畅学旧版本的 state 用裸数字 ID；现在统一加了 usst- 前缀，
+    这里去掉前缀以兼容旧 state，避免升级后把已提醒过的作业再发一遍。
+    """
+    ident = str(a.get("id"))
+    if a.get("platform") == "usst" and ident.startswith("usst-"):
+        return ident[5:]
+    return ident
+
+
 def rec_for(state, a):
     return state.setdefault(
-        str(a["id"]),
+        _state_key(a),
         {"dates": [], "final_dates": [], "announced": False},
     )
 
@@ -176,8 +188,18 @@ def check(items=None, dry_run=False):
         if not mods:
             raise NotConfigured("尚未保存账号密码")
         items = []
+        failed = []
         for mod in mods:
-            items.extend(mod.fetch())
+            try:
+                items.extend(mod.fetch())
+            except Exception as e:
+                # 单个平台失败不影响其它平台：记下来，其它平台照常提醒
+                failed.append(f"{mod.NAME}：{type(e).__name__}: {e}")
+        if failed and not items:
+            # 全部平台都失败才算本轮失败
+            raise RuntimeError("；".join(failed))
+        for msg in failed:
+            print(f"（{msg}）")
 
     mutes = load_mutes()
     active = [a for a in items if not is_muted(a, mutes)]

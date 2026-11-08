@@ -90,11 +90,21 @@ class App:
                 mods = platforms.configured()
                 if not mods:
                     raise platforms.NotConfigured("尚未保存账号密码")
-                items = []
+                items, failed = [], []
                 for mod in mods:
-                    items.extend(mod.fetch())
+                    try:
+                        items.extend(mod.fetch())
+                    except Exception as e:
+                        # 单个平台失败不影响其它平台
+                        failed.append(f"{mod.NAME}：{type(e).__name__}: {e}")
+                for msg in failed:
+                    log(f"{datetime.now():%Y-%m-%d %H:%M} {msg}")
+                if failed and not items:
+                    raise RuntimeError("；".join(failed))
                 self.items = items
                 summary, sent = remind.check(items=items)
+                if failed:
+                    summary += f"（{len(failed)} 个平台抓取失败）"
                 self.last_summary = summary
                 log(summary)
         except Exception as e:

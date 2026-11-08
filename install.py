@@ -57,11 +57,11 @@ def ensure_config():
             print()
 
     hints = []
-    for m in platforms.enabled():
-        if not secrets.account(m.KEY):
-            hints.append(f"  {m.NAME}账号  →  python config_tool.py --account")
+    configured = [m for m in platforms.enabled() if secrets.account(m.KEY)]
+    if not configured:
+        hints.append("  至少一个平台账号  →  python config_tool.py --account")
     if not secrets.email_config():
-        hints.append("  提醒邮箱    →  python config_tool.py --email")
+        hints.append("  提醒邮箱          →  python config_tool.py --email")
     if hints:
         print("还差这几步：")
         print("\n".join(hints))
