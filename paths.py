@@ -15,7 +15,7 @@
 import os
 from pathlib import Path
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
@@ -33,6 +33,8 @@ DATA_DIR = Path(os.environ.get("USST_HW_DATA_DIR") or _default_data_dir())
 SECRETS = DATA_DIR / "secrets.dat"
 STATE = DATA_DIR / "browser_state.json"
 CHAOXING_STATE = DATA_DIR / "chaoxing_state.json"
+SMARTESTU_STATE = DATA_DIR / "smartestu_state.json"
+SMARTESTU_RAW = DATA_DIR / "_smartestu_raw.json"
 RAW = DATA_DIR / "_browser_raw.json"
 SENT_LOG = DATA_DIR / "sent_log.json"
 LOG = DATA_DIR / "reminder.log"

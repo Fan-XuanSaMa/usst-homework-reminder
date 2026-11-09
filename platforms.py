@@ -15,7 +15,7 @@
 import importlib
 
 # 当前启用的平台。接入新平台时往这里追加模块名即可。
-PLATFORMS = ["tronclass", "chaoxing"]
+PLATFORMS = ["tronclass", "chaoxing", "smartestu"]
 
 
 class NotConfigured(RuntimeError):

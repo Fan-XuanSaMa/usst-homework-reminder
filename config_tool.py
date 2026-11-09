@@ -57,7 +57,7 @@ def _platform_menu():
         return mods[0]
 
     def configured(m):
-        return bool(secrets.account(m.KEY))
+        return _is_configured(m)
 
     default = next((i for i, m in enumerate(mods, 1) if not configured(m)), 1)
     print("要配置哪个作业平台？")
@@ -78,6 +78,12 @@ def setup_account():
     if mod is None:
         return 1
     key, name = mod.KEY, mod.NAME
+    hint = getattr(mod, "LOGIN_HINT", "")
+    if hint:
+        print(f"== {name} 账号 ==")
+        print(f"提示：不想填密码的话，可以直接用浏览器登录一次：{hint}")
+        print("      登录态会保存下来复用，程序不碰你的密码。")
+        print()
     cur = secrets.account(key) or {}
     print(f"== {name} 账号 ==")
     answers = {}
@@ -160,11 +166,19 @@ def guess_host(address):
 def _status():
     """返回 (缺少的项列表, 是否全部就绪)。只要有一个平台配好即可。"""
     missing = []
-    if not any(secrets.account(m.KEY) for m in platforms.enabled()):
+    if not any(m.load_creds() for m in platforms.enabled()):
         missing.append("至少一个平台账号")
     if not secrets.email_config():
         missing.append("提醒邮箱")
     return missing
+
+
+def _is_configured(m):
+    """平台是否可用：有账号密码，或者有浏览器登录会话（如数你最灵）。"""
+    try:
+        return bool(m.load_creds())
+    except Exception:
+        return False
 
 
 def show():
@@ -181,6 +195,9 @@ def show():
             any_acct = True
             print(f"  {m.NAME:6s}：{secrets.mask(a.get('user', ''), 3)}"
                   f"  密码 {secrets.mask(a.get('password', ''))}（{len(a.get('password', ''))} 位）")
+        elif _is_configured(m):
+            any_acct = True
+            print(f"  {m.NAME:6s}：已用浏览器登录（未保存密码）")
         else:
             print(f"  {m.NAME:6s}：未配置")
     if not mods:
@@ -209,9 +226,12 @@ def show():
     return 0
 
 
-def _clear_common():
-    if paths.STATE.exists():
-        paths.STATE.unlink()
+def _clear_common(key=None):
+    """清除浏览器登录会话。key 为 None 时清全部平台的。"""
+    states = {"usst": paths.STATE, "chaoxing": paths.CHAOXING_STATE, "smartestu": paths.SMARTESTU_STATE}
+    for k, p in states.items():
+        if key is None or k == key:
+            p.unlink(missing_ok=True)
 
 
 def reset():
@@ -224,24 +244,26 @@ def reset():
 def reset_account():
     d = secrets.load()
     accounts = d.get("accounts") or {}
-    if not accounts:
+    session_only = [m.KEY for m in platforms.enabled() if not accounts.get(m.KEY) and _is_configured(m)]
+    if not accounts and not session_only:
         print("没有已保存的账号。")
         return 0
     mods = platforms.enabled()
-    if len(accounts) == 1:
-        key = next(iter(accounts))
+    if len(accounts) + len(session_only) == 1:
+        key = next(iter(accounts)) if accounts else session_only[0]
         name = next((m.NAME for m in mods if m.KEY == key), key)
         d["accounts"] = {}
         secrets.save(d)
-        _clear_common()
+        _clear_common(key)
         print(f"已清除 {name} 账号与登录状态。邮箱配置保留。")
         return 0
 
     print("要清除哪个平台的账号？")
-    keys = list(accounts)
+    keys = list(accounts) + session_only
     for i, k in enumerate(keys, 1):
         name = next((m.NAME for m in mods if m.KEY == k), k)
-        print(f"  {i}. {name}")
+        mark = "（仅浏览器登录）" if k in session_only else ""
+        print(f"  {i}. {name}{mark}")
     raw = ask("序号（直接回车＝全部清除）", "", allow_empty=True)
     if raw is None:
         return 1
@@ -254,9 +276,10 @@ def reset_account():
     if not (raw.isdigit() and 1 <= int(raw) <= len(keys)):
         print("序号无效，已取消。")
         return 1
-    d["accounts"].pop(keys[int(raw) - 1], None)
+    key = keys[int(raw) - 1]
+    d["accounts"].pop(key, None)
     secrets.save(d)
-    _clear_common()
+    _clear_common(key)
     print("已清除该平台账号与登录状态。邮箱配置保留。")
     return 0
 
@@ -348,7 +371,7 @@ def first_unconfigured():
 
     平台账号只要求「至少配一个」，不会因为没配第二个平台而反复追问。
     """
-    if not any(secrets.account(m.KEY) for m in platforms.enabled()):
+    if not any(_is_configured(m) for m in platforms.enabled()):
         return "account"
     if not secrets.email_config():
         return "email"

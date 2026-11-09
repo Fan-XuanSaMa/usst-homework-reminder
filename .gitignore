@@ -6,6 +6,7 @@ secrets.dat
 browser_state.json
 chaoxing_state.json
 *_state.json
+_smartestu_raw.json
 _browser_raw.json
 sent_log.json
 reminder.log
