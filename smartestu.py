@@ -402,6 +402,32 @@ def fetch():
     return normalize(fetch_raw(creds))
 
 
+def session_info():
+    """登录会话状态，供提醒程序决定要不要发「快过期了」的提示。
+
+    ok         会话是否还有效（按 Cookie 的 expires 算）
+    days_left  距离过期还剩几天；Cookie 没写过期时间时为 None（未知）
+    auto_login 是否存了账号密码（True 时程序能自己重新登录，不用提醒）
+    """
+    has_pwd = bool(secrets.get(f"accounts.{KEY}.user") and secrets.get(f"accounts.{KEY}.password"))
+    if not paths.SMARTESTU_STATE.exists():
+        return {"ok": False, "days_left": None, "auto_login": has_pwd}
+    try:
+        st = json.loads(paths.SMARTESTU_STATE.read_text(encoding="utf-8"))
+        exps = [float(c["expires"]) for c in st.get("cookies") or []
+                if c.get("expires") and float(c["expires"]) > 0]
+        if not exps:
+            # 全是会话 Cookie（没写过期时间）：能否用只有服务端知道，按有效算，失效时走故障告警
+            return {"ok": True, "days_left": None, "auto_login": has_pwd}
+        # 数你最灵有两个 Cookie：15 分钟的短期访问令牌 + 30 天的续期令牌。
+        # 会话的真实寿命看最晚过期的那个，取 min 会误报「只剩 15 分钟」。
+        left = (max(exps) - now().timestamp()) / 86400
+        # 剩余不足 1 小时的会话实际已经不可用，直接按过期处理，别发「约 0 天后过期」这种怪话
+        return {"ok": left > 1 / 24, "days_left": max(left, 0.0), "auto_login": has_pwd}
+    except Exception:
+        return {"ok": True, "days_left": None, "auto_login": has_pwd}
+
+
 def manual_login(timeout_sec=300):
     """打开有头浏览器让用户自己登录（密码/邮箱验证/微信都行），把会话存下来。
 

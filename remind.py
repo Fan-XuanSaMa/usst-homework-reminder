@@ -179,9 +179,63 @@ def send_email(subject, body, dry_run=False):
     raise last_err
 
 
+# ---------- 登录状态 ----------
+
+def session_warnings(mods):
+    """收集各平台会话的临期/过期提示，返回 [str]。
+
+    只有「没有账号密码、程序无法自己续期」的平台才值得提醒；
+    存了密码的平台过期会自动重新登录，不用烦用户。
+    """
+    out = []
+    for mod in mods:
+        fn = getattr(mod, "session_info", None)
+        if fn is None:
+            continue
+        try:
+            info = fn()
+        except Exception:
+            continue
+        if info.get("auto_login"):
+            continue
+        hint = getattr(mod, "LOGIN_HINT", "") or "python config_tool.py --account"
+        days = info.get("days_left")
+        if not info.get("ok"):
+            out.append(f"{mod.NAME}的登录已过期，抓不到作业了。重新登录：{hint}")
+        elif days is not None and days < 3:
+            out.append(f"{mod.NAME}的登录约 {max(days, 0):.0f} 天后过期。"
+                       f"想不被打断，可以现在重新登录（{hint}），或存一份账号密码（python config_tool.py --account）")
+    return out
+
+
+def send_session_warning(warnings, dry_run=False):
+    """会话临期提醒：每天最多一封，避免刷屏。"""
+    if not warnings:
+        return False
+    state = load_state()
+    rec = state.setdefault("_session_warn", {"dates": []})
+    today = now().date().isoformat()
+    if today in rec["dates"]:
+        return False
+    send_email(
+        "[上理作业提醒] 登录状态：有平台的登录快过期了",
+        (
+            f"{now():%Y-%m-%d %H:%M}\n\n"
+            + "\n\n".join(f"- {w}" for w in warnings)
+            + "\n\n处理前这个平台的作业可能漏报。\n"
+        ),
+        dry_run=dry_run,
+    )
+    rec["dates"].append(today)
+    if not dry_run:
+        save_state(state)
+    return True
+
+
 # ---------- 主逻辑 ----------
 
 def check(items=None, dry_run=False):
+    mods = None
     if items is None:
         import platforms
         mods = platforms.configured()
@@ -207,6 +261,9 @@ def check(items=None, dry_run=False):
     today = t.date().isoformat()
     state = load_state()
     days_before = float(CONFIG.get("remind_days_before", 5))
+
+    # 会话临期/过期提示：并入今天的汇总；今天没有汇总邮件时单独发一封
+    sess = session_warnings(mods) if mods is not None else []
 
     # 只关心两类作业：未提交、未过截止、且在提醒窗口内
     # 已提交的不提醒；已过截止的不提醒；暂未设截止时间的进「新作业」一栏。
@@ -257,6 +314,9 @@ def check(items=None, dry_run=False):
             blocks.append("【新作业（暂无截止时间）】")
             blocks.append("\n\n".join(undated_line(a) for a in undated))
             n += len(undated)
+        if sess:
+            blocks.append("【登录状态】")
+            blocks.append("\n".join(f"- {w}" for w in sess))
         if blocks:
             send_email(
                 f"[作业提醒] {len(pending_all)} 个作业即将截止" + (f"，{len(undated)} 个新作业" if undated else ""),
@@ -269,6 +329,15 @@ def check(items=None, dry_run=False):
                 rec_for(state, a)["announced"] = True
             state["_digest_sent_at"] = t.isoformat()
             sent = 1
+            # 汇总里已经带了登录状态，单独提醒当天就不用再发了
+            if sess:
+                rec = state.setdefault("_session_warn", {"dates": []})
+                if today not in rec["dates"]:
+                    rec["dates"].append(today)
+    elif sess:
+        # 今天没有汇总邮件，但登录状态有问题：单独发一封（每天最多一封）
+        if send_session_warning(sess, dry_run=dry_run):
+            sent = 1
 
     if not dry_run:
         save_state(state)
@@ -279,6 +348,7 @@ def check(items=None, dry_run=False):
         f"（{days_before:g} 天内 {len(pending_all)}，无截止 {len(undated)}），"
         f"静默 {len(items) - len(active)} 个，"
         + (f"发送 {sent} 封" if due_now else "距上次提醒不足 24 小时，今天不再发送")
+        + (f"，登录状态提醒 {len(sess)} 条" if sess else "")
     )
     return summary, sent
 
@@ -290,13 +360,36 @@ def send_failure_alert(detail, dry_run=False):
     today = now().date().isoformat()
     if today in rec["dates"]:
         return False
+    # 附上各平台登录状态，方便判断是哪个平台断了
+    sess_lines = []
+    try:
+        import platforms
+        for m in platforms.configured():
+            fn = getattr(m, "session_info", None)
+            if fn is None:
+                continue
+            try:
+                info = fn()
+            except Exception:
+                continue
+            if info.get("auto_login"):
+                sess_lines.append(f"- {m.NAME}：已存账号密码，可自动续期")
+            elif info.get("ok") and info.get("days_left") is not None:
+                sess_lines.append(f"- {m.NAME}：登录约 {info['days_left']:.0f} 天后过期")
+            elif info.get("ok"):
+                sess_lines.append(f"- {m.NAME}：登录状态未知（服务端未给过期时间）")
+            else:
+                sess_lines.append(f"- {m.NAME}：登录已过期")
+    except Exception:
+        pass
     send_email(
         "[上理作业提醒] 系统故障：登录或抓取失败",
         (
             f"{now():%Y-%m-%d %H:%M} {detail}\n\n"
-            "在恢复前不会收到作业提醒。\n"
+            + ("各平台登录状态：\n" + "\n".join(sess_lines) + "\n\n" if sess_lines else "")
+            + "在恢复前不会收到作业提醒。\n"
             "常见原因：统一身份认证密码修改、http://1906.usst.edu.cn 改版、需要验证码。\n"
-            "可手动运行 python tronclass.py 查看具体报错。\n"
+            "可手动运行 python remind.py --dry-run 查看具体报错。\n"
         ),
         dry_run=dry_run,
     )
